@@ -3,6 +3,8 @@
 const
   path = require('path'),
   hapi = require('hapi'),
+  constants = require('../lib/constants'),
+  dataLocation = path.join(constants.DEFAULT_DATA_FOLDER, constants.COMPILED_DATA_SUBFOLDER),
   //bcrypt = require('bcrypt'), // For unhashing passwords
   inert = require('inert'),
   hapiAuthBasic = require('hapi-auth-basic'),
@@ -21,7 +23,7 @@ const
     routes: {
       cors: true,
       files: {
-        relativeTo: path.join(__dirname, '..', 'data', 'compiled')
+        relativeTo: dataLocation
       }
     }
   };
