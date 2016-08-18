@@ -27,9 +27,9 @@ const
     .number('dayStep')
     .describe('dryRun', 'Don\'t actually save results')
     .boolean('dryRun')
-    .describe('doLogDebugInfo', 'Log debug info?')
-    .default('doLogDebugInfo', true)
-    .boolean('doLogDebugInfo')
+    .describe('quiet', 'Silence debug info?')
+    .default('quiet', false)
+    .boolean('quiet')
     .help('h')
     .alias('h', 'help')
     .argv,
