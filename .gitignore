@@ -22,3 +22,6 @@ pid
 
 # Script to start
 nomnom.sh
+
+# Clean then start
+nomall.sh
