@@ -35,11 +35,52 @@ const
     .argv,
   reporter = require('../lib/reporter.js');
 
-reporter(options)
-  .then(function (result) {
-    if (!options.dryRun) {
-      const fileName = path.join(result.compiledDataFolder, 'all.json');
-      console.log('Writing to ' + fileName);
-      require('fs').writeFileSync(fileName, JSON.stringify(result));
-    }
+function stringifyByPiece(obj, writeFn) {
+  if (typeof obj !== 'object' || Array.isArray(obj)) {
+    writeFn(JSON.stringify(obj));
+    return;
+  }
+  writeFn('{');
+  var keys = Object.keys(obj),
+    lastCommaIndex = keys.length - 1;
+  keys
+    .filter((key) => {
+      // Remove undefined values
+      return typeof obj[key] !== 'undefined';
+    })
+    .forEach((key, index) => {
+      writeFn('' + JSON.stringify(key) + ':');
+      stringifyByPiece(obj[key], writeFn);
+      if (index < lastCommaIndex) {
+        writeFn(',');
+      }
+    });
+  writeFn('}');
+}
+
+function finalize(result) {
+  if (options.dryRun) {
+    return;
+  }
+
+  const fileName = path.join(result.compiledDataFolder, 'all.json'),
+    fs = require('fs'),
+    stream = fs.createWriteStream(fileName, { flags: 'w' });
+
+  function writeMore(str) {
+    stream.write(str, function() {
+      // Now the data has been written.
+    });
+  }
+
+  stream.once('open', () => {
+    console.log('Writing to ' + fileName);
+    stringifyByPiece(result, writeMore);
+    stream.end();
   });
+
+}
+
+reporter(options)
+  .then(finalize);
+
