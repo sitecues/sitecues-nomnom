@@ -41,14 +41,15 @@ function stringifyByPiece(obj, writeFn) {
     return;
   }
   writeFn('{');
-  var keys = Object.keys(obj),
+  var
+    keys = Object.keys(obj)
+      .filter((key) => {
+        // Remove undefined values
+        return typeof obj[key] !== 'undefined';
+      }),
     lastCommaIndex = keys.length - 1;
-  keys
-    .filter((key) => {
-      // Remove undefined values
-      return typeof obj[key] !== 'undefined';
-    })
-    .forEach((key, index) => {
+  
+  keys.forEach((key, index) => {
       writeFn('' + JSON.stringify(key) + ':');
       stringifyByPiece(obj[key], writeFn);
       if (index < lastCommaIndex) {
