@@ -23,5 +23,10 @@ pid
 # Script to start
 nomnom.sh
 
-# Clean then start
+# Build all (clean data and mapreduce)
 nomall.sh
+
+# Build all fresh
+nomall-force-fresh.sh
+
+
