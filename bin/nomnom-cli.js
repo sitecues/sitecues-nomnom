@@ -48,7 +48,7 @@ function stringifyByPiece(obj, writeFn) {
         return typeof obj[key] !== 'undefined';
       }),
     lastCommaIndex = keys.length - 1;
-  
+
   keys.forEach((key, index) => {
       writeFn('' + JSON.stringify(key) + ':');
       stringifyByPiece(obj[key], writeFn);
