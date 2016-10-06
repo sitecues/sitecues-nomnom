@@ -17,6 +17,7 @@ const
       id: '2133d32a'
     }
   },
+  getCountsByDate = require('./counts-by-date'),
   server = new hapi.Server(),
   serverOptions = {
     port: parseInt(process.env.PORT, 10) || 3001,
@@ -41,6 +42,13 @@ server.register(hapiAuthBasic, (err) => {
     throw err;
   }
   server.auth.strategy('simple', 'basic', { validateFunc: validate });
+  server.route({
+    method: 'GET',
+      path: '/counts-by-date/{loc}/{ua}/{event}/{type}',
+      handler: function(req, reply) {
+        reply(getCountsByDate(req.params));
+      }
+  });
   server.route({
     method: 'GET',
     config: {
