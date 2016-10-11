@@ -9,14 +9,14 @@ const
   existingDataFetchPromise = {},
   levelUp = require('levelup'),
   levelDown = require('leveldown'), // DB backing
-  dbs = {};
+  dbCache = {};
 
 function getDbLocation(type) {
   return path.join(constants.DEFAULT_DATA_FOLDER, 'cache', type);
 }
 
 function getSourceDataLocation(type) {
-  return path.join(constants.DEFAULT_DATA_FOLDER, 'hive', type + '.ldjson');
+  return path.join(constants.DEFAULT_DATA_FOLDER, 'hive', 'location-and-ua', type + '.ldjson');
 }
 
 function logHeap() {
@@ -40,6 +40,12 @@ function getCountsByDate(params) {
         logHeap();
         if (err) {
           reject({ err });
+          return;
+        }
+
+        if (!dateMap) {
+          reject({ err: 'Undefined value for type=' + params.type + ', key=' + key });
+          return;
         }
 
         let startIndex = Infinity;
@@ -80,50 +86,95 @@ function getCountsByDate(params) {
     });
   };
 
-  return fetchSourceData(params.type)
+  return getData(params.type)
     .then(getDataSlice);
 }
 
-function fetchSourceData(type, options) {
+function closeDb(type) {
+  const db = dbCache[type];
+  if (!db) {
+    // No old db to destroy
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    db.close((err) => {
+      if (err) {
+        throw err;
+      }
+      resolve();
+    });
+  });
+}
+
+function destroyExistingDb(dbPath) {
+  return new Promise((resolve) => {
+    levelDown.destroy(dbPath, (err) => {
+      if (err) {
+        throw err;
+      }
+      resolve();
+    });
+  });
+}
+
+function createNewDb(dbPath) {
+  return new Promise((resolve) => {
+    levelUp(dbPath, (err, db) => {
+      if (err) {
+        throw err;
+      }
+      resolve(db);
+    });
+  });
+}
+
+function fetchData(db, sourceDataLocation) {
+  // Stream in new data
+  return new Promise((resolve) => {
+    fs.createReadStream(sourceDataLocation)
+      .pipe(es.split())
+      .pipe(es.map((unparsedPermutation, callback) => {
+        if (unparsedPermutation) {
+          const endKeyIndex = unparsedPermutation.indexOf('":'),
+            key = unparsedPermutation.substring(2, endKeyIndex),
+            value = unparsedPermutation.substring(endKeyIndex + 2, unparsedPermutation.length - 1);
+          db.put(key, value, callback);
+        }
+        else {
+          callback();
+        }
+      }))
+      .on('error', (err) => {
+        throw new Error(err);
+      })
+      .on('end', () => {
+        console.log('End');
+        logHeap();
+        resolve(db);
+      })
+  });
+}
+
+function refreshDb(type) {
+  const dbPath = getDbLocation(type);
+  return closeDb(type)
+    .then(() => destroyExistingDb(dbPath))
+    .then(() => createNewDb(dbPath))
+    .then((db) => {
+      console.log('Fetching ' + type);
+      return fetchData(db, getSourceDataLocation(type))
+    })
+    .then((db) => {
+      dbCache[type] = db; // Cache
+      return db;
+    });
+}
+
+function getData(type, options) {
   const doForce = options && options.doForce;
   if (doForce || !existingDataFetchPromise[type]) {
-    existingDataFetchPromise[type] = new Promise((resolve) => {
-      const dbPath = getDbLocation(type);
-      levelDown.destroy(dbPath, (err) => {
-        if (err) {
-          throw err;
-        }
-        dbs[type] = levelUp(dbPath, (err) => {
-          if (err) {
-            throw err;
-          }
-
-          console.log('Fetching ' + type);
-          // Stream in new data
-          fs.createReadStream(getSourceDataLocation(type))
-            .pipe(es.split())
-            .pipe(es.map((unparsedPermutation, callback) => {
-              if (unparsedPermutation) {
-                const endKeyIndex = unparsedPermutation.indexOf('":'),
-                  key = unparsedPermutation.substring(2, endKeyIndex),
-                  value = unparsedPermutation.substring(endKeyIndex + 2, unparsedPermutation.length - 1);
-                dbs[type].put(key, value, callback);
-              }
-              else {
-                callback();
-              }
-            }))
-            .on('error', (err) => {
-              throw new Error(err);
-            })
-            .on('end', () => {
-              console.log('End');
-              logHeap();
-              resolve(dbs[type]);
-            })
-        });
-      });
-    });
+    existingDataFetchPromise[type] = refreshDb(type);
   }
   else {
     // Use existing promise
@@ -147,11 +198,13 @@ function mkdir(dir) {
 mkdir(path.join(constants.DEFAULT_DATA_FOLDER, 'cache'));
 
 ALLOWED_TYPES.forEach((type) => {
-  fetchSourceData(type)
+  const watchTimeouts = {};
+  getData(type)
     .then(() => {
       fs.watch(getSourceDataLocation(type), () => {
-        setTimeout(function () {
-          fetchSourceData(type, {doForce: true});
+        clearTimeout(watchTimeouts[type]);
+        watchTimeouts[type] = setTimeout(function () {
+          getData(type, {doForce: true});
         }, 1000); // TODO fix this hacky way of waiting for the data write? Probably works pretty well since we're a streaming parser
       });
     });
