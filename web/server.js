@@ -3,6 +3,7 @@
 const
   path = require('path'),
   hapi = require('hapi'),
+  joi = require('joi'),
   constants = require('../lib/constants'),
   dataLocation = path.join(constants.DEFAULT_DATA_FOLDER, constants.COMPILED_DATA_SUBFOLDER),
   //bcrypt = require('bcrypt'), // For unhashing passwords
@@ -17,7 +18,8 @@ const
       id: '2133d32a'
     }
   },
-  getCountsByDate = require('./counts-by-date'),
+  locationAndUa = require('./location-and-ua'),
+  abTestData = require('./abtest'),
   server = new hapi.Server(),
   serverOptions = {
     port: parseInt(process.env.PORT, 10) || 3001,
@@ -44,10 +46,52 @@ server.register(hapiAuthBasic, (err) => {
   server.auth.strategy('simple', 'basic', { validateFunc: validate });
   server.route({
     method: 'GET',
-      path: '/counts-by-date/{loc}/{ua}/{event}/{type}',
+    path: '/list/loc',
+    handler: function(req, reply) {
+      reply(locationAndUa.list(0));
+    }
+  });
+  server.route({
+    method: 'GET',
+    path: '/list/ua',
+    handler: function(req, reply) {
+      reply(locationAndUa.list(1));
+    }
+  });
+  server.route({
+    method: 'GET',
+    path: '/list/event',
+    handler: function(req, reply) {
+      reply(locationAndUa.list(2));
+    }
+  });
+  server.route({
+    method: 'GET',
+      path: '/by-location-and-ua/{loc}/{ua}/{event}/{type}',
       handler: function(req, reply) {
-        reply(getCountsByDate(req.params));
+        reply(locationAndUa.get(req.params));
       }
+  });
+  server.route({
+    method: 'GET',
+    path: '/list/abtest/{testName}',
+    handler: function(req, reply) {
+      reply(abTestData.listTestValuesFor(params.testName));
+    }
+  });
+  server.route({
+    method: 'GET',
+    path: '/list/abtest',
+    handler: function(req, reply) {
+      reply(abTestData.listTestNamesAndDates());
+    }
+  });
+  server.route({
+    method: 'GET',
+    path: '/by-abtest/{testName}/{testValue}/{event}/{type}',
+    handler: function(req, reply) {
+      reply(abTestData.get(req.params));
+    }
   });
   server.route({
     method: 'GET',
