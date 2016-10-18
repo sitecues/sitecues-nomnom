@@ -16,7 +16,7 @@ function getDbLocation(category, type) {
   return path.join(constants.DEFAULT_DATA_FOLDER, 'cache', category, type);
 }
 
-function getDataSlice(db, key) {
+function getDataSlice(db, key, forceStartIndex, forceEndIndex) {
   if (!db) {
     return {
       err: 'No such type'
@@ -38,15 +38,15 @@ function getDataSlice(db, key) {
         return;
       }
 
-      let startIndex = Infinity;
+      let haveDataStartIndex = Infinity;
 
       // Fill counts array
       const allCountsArray = [],
         parsedDateMap = JSON.parse(dateMap);
       for (let date of Object.keys(parsedDateMap)) {
         const dateIndex = parseInt(date);
-        if (dateIndex < startIndex) {
-          startIndex = dateIndex;
+        if (dateIndex < haveDataStartIndex) {
+          haveDataStartIndex = dateIndex;
         }
         allCountsArray[dateIndex] = parsedDateMap[date];
       }
@@ -57,8 +57,13 @@ function getDataSlice(db, key) {
         });
       }
 
+      if (forceEndIndex) {
+        allCountsArray.length = forceEndIndex;
+      }
+
       // Remove useless entries at the start so that array only covers valuable date range where there were counts
-      const countsArray = allCountsArray.slice(startIndex),
+      const dateSliceStartIndex = typeof forceStartIndex === 'number' ? forceStartIndex : haveDataStartIndex,
+        countsArray = allCountsArray.slice(dateSliceStartIndex),
         numDates = countsArray.length;
 
       // Convert missing entries in valuable date range to 0
@@ -69,16 +74,16 @@ function getDataSlice(db, key) {
       }
 
       resolve({
-        startIndex,
+        dateSliceStartIndex,
         countsArray
       });
     });
   });
 }
 
-function getDateCountsArray(category, type, key) {
+function getDateCountsArray(category, type, key, forceStartIndex, forceEndIndex) {
   return fetchDatabase(category, type)
-    .then((db) => getDataSlice(db, key));
+    .then((db) => getDataSlice(db, key, forceStartIndex, forceEndIndex));
 }
 
 function logHeap() {

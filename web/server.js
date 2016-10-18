@@ -88,7 +88,7 @@ server.register(hapiAuthBasic, (err) => {
   });
   server.route({
     method: 'GET',
-    path: '/by-abtest/{testName}/{testValue}/{event}/{type}',
+    path: '/by-abtest/{testName}/{event}/{type}',
     handler: function(req, reply) {
       reply(abTestData.get(req.params));
     }

@@ -2,14 +2,55 @@
 
 const
   CATEGORY = 'abtest',
-  eventCountProcessor = require('./event-count-processor');
+  eventCountProcessor = require('./event-count-processor'),
+  countsByLocAndUa = require('./location-and-ua');  // Get same event counts when there is no AB test running
+
 let
   testNameValueMap,
   testDates;
 
+function getCountsForDateRange(params, dateRange) {
+  return countsByLocAndUa.get({
+      loc: '@any',
+      ua: '@supported',
+      event: params.event,
+      type: params.type,
+      startIndex: dateRange.startIndex,
+      endIndex: dateRange.endIndex
+    })
+  .then((baseEventCounts) => {
+    const testValues = Array.from(testNameValueMap[params.testName]) || [],
+      result = {};
+
+    for (let testValue of testValues) {
+      const key = params.testName + '||' + testValue + '||' + params.event;
+      result[testValue] = eventCountProcessor.getDateCountsArray(CATEGORY, params.type, key,
+        dateRange.startIndex, dateRange.endIndex).countsArray;
+    }
+
+    result['*base*'] = baseEventCounts.countsArray;
+    return result;
+  });
+}
+
 function get(params) {
-  const key = params.testName + '||' + params.testValue + '||' + params.event;
-  return eventCountProcessor.getDateCountsArray(CATEGORY, params.type, key);
+  return eventCountProcessor.fetchDatabase(CATEGORY, params.type)
+    .then(() => {
+      // Get date range
+      return getDateRange(params.testName);
+    })
+    .then((dateRange) => {
+      // Get base data
+      return getCountsForDateRange(params, dateRange);
+    });
+}
+
+function getDateRange(testName) {
+  const sortedDateInfo = Object.keys(testDates[testName]).sort();
+  return {
+    startIndex: sortedDateInfo[0],
+    endIndex: sortedDateInfo[sortedDateInfo.length - 1]
+  };
 }
 
 function listTestNamesAndDates() {
@@ -18,9 +59,7 @@ function listTestNamesAndDates() {
       const testNames = Object.keys(testDates),
         testDateRangeInfo = {};
       for (let testName of testNames) {
-        const sortedDateInfo = Object.keys(testDates[testName]).sort();
-        testDateRangeInfo[name].startIndex = sortedDateInfo[0];
-        testDateRangeInfo[name].endIndex = sortedDateInfo[sortedDateInfo.length - 1];
+        testDateRangeInfo[testName] = getDateRange(testName);
       }
       return testDateRangeInfo;
     });

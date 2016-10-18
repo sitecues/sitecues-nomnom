@@ -6,9 +6,11 @@ const
 let
   subkeyCache;
 
+// If optional startIndex/endIndex are left out, will provide the useful date range,
+// along with startIndex field to indicate what the date range is
 function get(params) {
   const key = params.loc + '||' + params.ua + '||' + params.event;
-  return eventCountProcessor.getDateCountsArray(CATEGORY, params.type, key);
+  return eventCountProcessor.getDateCountsArray(CATEGORY, params.type, key, params.startIndex, params.endIndex);
 }
 
 function list(index) {
