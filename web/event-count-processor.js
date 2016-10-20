@@ -24,7 +24,7 @@ function getDataSlice(db, key, forceStartIndex, forceEndIndex) {
   }
 
   return new Promise((resolve, reject) => {
-    console.log('Data slice for ' + key);
+    console.log('Data slice for ' + key + '   dates: ' + forceStartIndex + '-' + forceEndIndex);
 
     db.get(key, (err, dateMap) => {
       logHeap();

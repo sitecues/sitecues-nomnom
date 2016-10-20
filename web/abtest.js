@@ -66,7 +66,7 @@ function get(params) {
 }
 
 function getDateRange(testName) {
-  const sortedDateInfo = Object.keys(testDates[testName]).sort();
+  const sortedDateInfo = Array.from(testDates[testName]).sort();
   return {
     startIndex: sortedDateInfo[0],
     endIndex: sortedDateInfo[sortedDateInfo.length - 1]
@@ -106,12 +106,17 @@ function registerPermutation(key, dateData) {
     testValue = isMultipartKey ? splitTestNameVal[splitTestNameVal.length - 1] : true;
   if (!testNameValueMap[testName]) {
     testNameValueMap[testName] = new Set();
-    testDates[testName] = {};
+    testDates[testName] = new Set();
     console.log('AB Test name: ' +  testName);
     console.log(key);
   }
-  testNameValueMap[testName].add(testValue); // Add value to set
-  Object.assign(testDates[testName], JSON.parse(dateData));
+  // Add test name to set of all test names
+  testNameValueMap[testName].add(testValue);
+
+  // Add all dates for this test value to set of dates for the test name
+  const origDates = testDates[testName],
+    newDates = Object.keys(dateData).map((x) => parseInt(x));
+  newDates.forEach(origDates.add.bind(origDates));
 }
 
 eventCountProcessor.init(CATEGORY, {
