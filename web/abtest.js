@@ -115,7 +115,8 @@ function registerPermutation(key, dateData) {
 
   // Add all dates for this test value to set of dates for the test name
   const origDates = testDates[testName],
-    newDates = Object.keys(dateData).map((x) => parseInt(x));
+    parsedDates = JSON.parse(dateData),
+    newDates = Object.keys(parsedDates).map((x) => parseInt(x));
   newDates.forEach(origDates.add.bind(origDates));
 }
 
