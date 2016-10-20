@@ -9,6 +9,10 @@ let
   testNameValueMap,
   testDates;
 
+function getTestValues(testName) {
+  return Array.from(testNameValueMap[testName]) || [];
+}
+
 function getCountsForDateRange(params, dateRange) {
   return countsByLocAndUa.get({
       loc: '@any',
@@ -19,17 +23,33 @@ function getCountsForDateRange(params, dateRange) {
       endIndex: dateRange.endIndex
     })
   .then((baseEventCounts) => {
-    const testValues = Array.from(testNameValueMap[params.testName]) || [],
-      result = {};
+    const testValues = getTestValues(params.testName),
+      dateCountPromises = testValues.map((testValue) => {
+        const abTestName = testValue === true ? params.testName : params.testName + '.' + testValue,
+          key = abTestName + '||' + params.event,
+          dateCountPromise = eventCountProcessor.getDateCountsArray(CATEGORY, params.type, key,
+            dateRange.startIndex, dateRange.endIndex);
+        return dateCountPromise;
+      });
 
-    for (let testValue of testValues) {
-      const key = params.testName + '||' + testValue + '||' + params.event;
-      result[testValue] = eventCountProcessor.getDateCountsArray(CATEGORY, params.type, key,
-        dateRange.startIndex, dateRange.endIndex).countsArray;
+    dateCountPromises.push(Promise.resolve(baseEventCounts));
+
+    return Promise.all(dateCountPromises);
+  })
+  .then((results) => {
+    console.log('---');
+    const
+      finalResult = {},
+      testValues = getTestValues(params.testName);
+    let
+      index = results.length;
+
+    while (index --) {
+      const testValue = testValues[index];
+      finalResult[testValue || '*base*'] = results[index].countsArray;
     }
 
-    result['*base*'] = baseEventCounts.countsArray;
-    return result;
+    return finalResult;
   });
 }
 
@@ -80,13 +100,15 @@ function registerPermutation(key, dateData) {
     return;
   }
   const splitKey = key.split('||'),
-    splitTestNameVal = splitKey.split('.'),
-    testName = splitTestNameVal.slice(0, -1).join('.'),
-    testValue = splitTestNameVal[splitTestNameVal.length - 1];
+    splitTestNameVal = splitKey[0].split('.'),
+    isMultipartKey = splitTestNameVal.length > 1,
+    testName = isMultipartKey ? splitTestNameVal.slice(0, -1).join('.') : splitTestNameVal[0],
+    testValue = isMultipartKey ? splitTestNameVal[splitTestNameVal.length - 1] : true;
   if (!testNameValueMap[testName]) {
     testNameValueMap[testName] = new Set();
     testDates[testName] = {};
-    console.log(testName);
+    console.log('AB Test name: ' +  testName);
+    console.log(key);
   }
   testNameValueMap[testName].add(testValue); // Add value to set
   Object.assign(testDates[testName], JSON.parse(dateData));

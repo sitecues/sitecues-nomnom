@@ -24,18 +24,16 @@ function getDataSlice(db, key, forceStartIndex, forceEndIndex) {
   }
 
   return new Promise((resolve, reject) => {
-    console.log(key);
+    console.log('Data slice for ' + key);
 
     db.get(key, (err, dateMap) => {
       logHeap();
       if (err) {
-        reject({ err });
-        return;
+        return reject({ err });
       }
 
       if (!dateMap) {
-        reject({ err: 'Undefined value' });
-        return;
+        return reject({ err: 'Undefined value' });
       }
 
       let haveDataStartIndex = Infinity;
@@ -52,7 +50,7 @@ function getDataSlice(db, key, forceStartIndex, forceEndIndex) {
       }
 
       if (!allCountsArray.length) {
-        reject({
+        return reject({
           err: 'Weirdly, could not compute array'
         });
       }
@@ -62,8 +60,8 @@ function getDataSlice(db, key, forceStartIndex, forceEndIndex) {
       }
 
       // Remove useless entries at the start so that array only covers valuable date range where there were counts
-      const dateSliceStartIndex = typeof forceStartIndex === 'number' ? forceStartIndex : haveDataStartIndex,
-        countsArray = allCountsArray.slice(dateSliceStartIndex),
+      const startIndex = typeof forceStartIndex === 'number' ? forceStartIndex : haveDataStartIndex,
+        countsArray = allCountsArray.slice(startIndex),
         numDates = countsArray.length;
 
       // Convert missing entries in valuable date range to 0
@@ -74,7 +72,7 @@ function getDataSlice(db, key, forceStartIndex, forceEndIndex) {
       }
 
       resolve({
-        dateSliceStartIndex,
+        startIndex,
         countsArray
       });
     });
@@ -83,7 +81,11 @@ function getDataSlice(db, key, forceStartIndex, forceEndIndex) {
 
 function getDateCountsArray(category, type, key, forceStartIndex, forceEndIndex) {
   return fetchDatabase(category, type)
-    .then((db) => getDataSlice(db, key, forceStartIndex, forceEndIndex));
+    .then((db) => getDataSlice(db, key, forceStartIndex, forceEndIndex))
+    .catch((val) => {
+      console.log(val);
+      return val;
+    } );
 }
 
 function logHeap() {
@@ -100,6 +102,7 @@ function closeDb(category, type) {
   return new Promise((resolve) => {
     db.close((err) => {
       if (err) {
+        console.log(err);
         throw err;
       }
       resolve();
@@ -111,6 +114,7 @@ function destroyExistingDb(dbPath) {
   return new Promise((resolve) => {
     levelDown.destroy(dbPath, (err) => {
       if (err) {
+        console.log(err);
         throw err;
       }
       resolve();
@@ -123,6 +127,7 @@ function createNewDb(dbPath) {
     levelUp(dbPath, (err, db) => {
       if (err) {
         throw err;
+        console.log(err);
       }
       resolve(db);
     });
@@ -151,6 +156,7 @@ function fetchData(db, category, type, sourceDataLocation) {
         }
       }))
       .on('error', (err) => {
+        console.log(err);
         throw new Error(err);
       })
       .on('end', () => {
@@ -224,7 +230,7 @@ function init(category, permutationCallback) {
         fs.watch(getSourceDataLocation(category, type), () => {
           clearTimeout(watchTimeouts[type]);
           watchTimeouts[type] = setTimeout(function () {
-            fetchDatabase(type, {doForce: true});
+            fetchDatabase(category, type, {doForce: true});
           }, 1000); // TODO fix this hacky way of waiting for the data write? Probably works pretty well since we're a streaming parser
         });
       });

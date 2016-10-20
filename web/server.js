@@ -35,12 +35,14 @@ server.connection(serverOptions);
 
 server.register(inert, (err) => {
   if (err) {
+    console.log(err);
     throw err;
   }
 });
 
 server.register(hapiAuthBasic, (err) => {
   if (err) {
+    console.log(err);
     throw err;
   }
   server.auth.strategy('simple', 'basic', { validateFunc: validate });
@@ -111,6 +113,7 @@ server.register(hapiAuthBasic, (err) => {
 
 server.start((err) => {
   if (err) {
+    console.log(err);
     throw err;
   }
   console.log('Server running at:', server.info.uri);
