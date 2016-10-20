@@ -59,27 +59,41 @@ function stringifyByPiece(obj, writeFn) {
   writeFn('}');
 }
 
-function finalize(result) {
-  if (options.dryRun) {
-    return;
-  }
-
-  const fileName = path.join(result.compiledDataFolder, 'all.json'),
-    fs = require('fs'),
-    stream = fs.createWriteStream(fileName, { flags: 'w' });
+function writeReport(name, fileName, data) {
+  const fs = require('fs'),
+    stream = fs.createWriteStream(fileName, {flags: 'w'});
 
   function writeMore(str) {
-    stream.write(str, function() {
+    stream.write(str, function () {
       // Now the data has been written.
     });
   }
 
   stream.once('open', () => {
     console.log('Writing to ' + fileName);
-    stringifyByPiece(result, writeMore);
+    stringifyByPiece(data, writeMore);
     stream.end();
   });
+}
 
+
+function finalize(result) {
+  if (options.dryRun) {
+    return;
+  }
+
+  if (result.eventTotals) {
+    // Move these up a level into their own separate reports, so that viewer can get only the data it needs
+    result.byNameOnly = result.eventTotals.byNameOnly;
+    result.byLocation = result.eventTotals.byLocation;
+    result.byUserAgentOnly= result.eventTotals.byUserAgentOnly;
+    delete result.eventTotals;
+  }
+
+  for (let report of Object.keys(result)) {
+    const fileName = path.join(result.compiledDataFolder, report + '.json');
+    writeReport(report, fileName, result[report]);
+  }
 }
 
 reporter(options)
