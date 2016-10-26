@@ -10,7 +10,12 @@ const
   levelDown = require('leveldown'), // DB backing
   ALLOWED_TYPES = [ 'userCounts', 'sessionCounts', 'eventCounts' ],
   permutationCallbackMap = {},
-  dbCache = {};
+  keyCounterMap = {},
+  keyHashMap = {},
+  dbCache = {},
+  CHECK_REPEATED_KEYS = true;
+
+let isFetching = false;
 
 function getDbLocation(category, type) {
   return path.join(constants.DEFAULT_DATA_FOLDER, 'cache', category, type);
@@ -24,7 +29,7 @@ function getDataSlice(db, key, forceStartIndex, forceEndIndex) {
   }
 
   return new Promise((resolve, reject) => {
-    console.log('Data slice for ' + key + '   dates: ' + forceStartIndex + '-' + forceEndIndex);
+    console.log('Data slice for ' + key + (forceEndIndex ? '   dates: ' + forceStartIndex + '-' + forceEndIndex : ''));
 
     db.get(key, (err, dateMap) => {
       logHeap();
@@ -96,6 +101,7 @@ function closeDb(category, type) {
   const db = dbCache[category + ':' + type];
   if (!db) {
     // No old db to destroy
+    console.log('No existing db for ' + category + ':' + type);
     return Promise.resolve();
   }
 
@@ -105,12 +111,13 @@ function closeDb(category, type) {
         console.log(err);
         throw err;
       }
+      dbCache[category + ':' + type] = null; // Clear cache
       resolve();
     });
   });
 }
 
-function destroyExistingDb(dbPath) {
+function destroyExistingDb(dbPath, category, type) {
   return new Promise((resolve) => {
     levelDown.destroy(dbPath, (err) => {
       if (err) {
@@ -122,7 +129,7 @@ function destroyExistingDb(dbPath) {
   });
 }
 
-function createNewDb(dbPath) {
+function createNewDb(dbPath, category, type) {
   return new Promise((resolve) => {
     levelUp(dbPath, (err, db) => {
       if (err) {
@@ -132,6 +139,24 @@ function createNewDb(dbPath) {
       resolve(db);
     });
   });
+}
+
+function incrementCounter(category, type, key) {
+  function getHashCode(s) {
+    // From http://stackoverflow.com/questions/7616461/generate-a-hash-from-string-in-javascript-jquery
+    // but modified to reduce the number of collisions (by not confining the values to 32 bit)
+    // For 294 images on a site, the normal 32 bit hash algorithm has a 1/100,000 chance of collision, and we are better than that.
+    // For more info on hash collisions, see http://preshing.com/20110504/hash-collision-probabilities/
+    return [...s].reduce(function (a, b) {
+      return ((a << 5) - a) + b.charCodeAt(0);
+    }, 0);
+  }
+
+  ++ keyCounterMap[category][type];
+  keyHashMap[category][type] += getHashCode(key);
+  if (keyCounterMap[category][type] % 10000 === 0) {
+    process.stdout.write('.');
+  }
 }
 
 function fetchData(db, category, type, sourceDataLocation) {
@@ -146,7 +171,22 @@ function fetchData(db, category, type, sourceDataLocation) {
           const endKeyIndex = unparsedPermutation.indexOf('":'),
             key = unparsedPermutation.substring(2, endKeyIndex),
             value = unparsedPermutation.substring(endKeyIndex + 2, unparsedPermutation.length - 1);
-          db.put(key, value, callback);
+          incrementCounter(category, type, key);
+          if (CHECK_REPEATED_KEYS) {
+            db.get(key, (err) => {
+              if (err && err.notFound) {
+                // This is a good thing, as we don't want the same key in the database twice
+                db.put(key, value, callback);
+              }
+              else {
+                //throw
+                console.log(new Error('Repeated key ' + key));
+              }
+            });
+          }
+          else {
+            db.put(key, value, callback);
+          }
           if (registerPermutationFn) {
             registerPermutationFn(key, value);
           }
@@ -167,15 +207,16 @@ function fetchData(db, category, type, sourceDataLocation) {
   });
 }
 
-function refreshDb(category, type) {
+function restartDb(category, type) {
   const dbPath = getDbLocation(category, type),
     registerPermutationFn = permutationCallbackMap[category][type];
   if (registerPermutationFn) {
     registerPermutationFn(); // Reset
   }
+
   return closeDb(category, type)
-    .then(() => destroyExistingDb(dbPath))
-    .then(() => createNewDb(dbPath))
+    .then(() => destroyExistingDb(dbPath, category, type))
+    .then(() => createNewDb(dbPath, category, type))
     .then((db) => {
       console.log('Fetching ' + category + ' ' + type);
       return fetchData(db, category, type, getSourceDataLocation(category, type))
@@ -191,11 +232,20 @@ function fetchDatabase(category, type, options) {
   if (!type) {
     type = ALLOWED_TYPES[0];
   }
+  if (!keyCounterMap[category]) {
+    keyCounterMap[category] = {};
+  }
+  if (!keyHashMap[category]) {
+    keyHashMap[category] = {};
+  }
+  keyCounterMap[category][type] = 0;
+  keyHashMap[category][type] = 0;
+
   if (!existingDataFetchPromise[category]) {
     existingDataFetchPromise[category] = {};
   }
   if (doForce || !existingDataFetchPromise[category][type]) {
-    existingDataFetchPromise[category][type] = refreshDb(category, type);
+    existingDataFetchPromise[category][type] = restartDb(category, type);
   }
   else {
     // Use existing promise
@@ -218,23 +268,64 @@ function getSourceDataLocation(category, type) {
   return path.join(constants.DEFAULT_DATA_FOLDER, 'hive', category, type + '.ldjson');
 }
 
+function verifyData(category) {
+  const allKeyCounters = keyCounterMap[category],
+    allKeyHashes = keyHashMap[category],
+    report = '\nKey counters: ' + JSON.stringify(allKeyCounters) +
+      '\nKey hashes: ' + JSON.stringify(allKeyHashes);
+  if (allKeyHashes.eventCounts !== allKeyHashes.sessionCounts || allKeyHashes.eventCounts !== allKeyHashes.userCounts) {
+    //throw
+    console.log(new Error(category + ' discrepancy in event/user/session keys: ' + report));
+  }
+  console.log(category + ' passes all checks for: ' + report);
+}
+
+function fetchAllTypes(category) {
+  const fetchThemAll = ALLOWED_TYPES.map((type) => {
+    return fetchDatabase(category, type, { doForce : true});
+  });
+  return Promise.all(fetchThemAll);
+}
+
 function init(category, permutationCallback) {
   mkdir(path.join(constants.DEFAULT_DATA_FOLDER, 'cache', category));
 
   permutationCallbackMap[category] = permutationCallback;
 
-  ALLOWED_TYPES.forEach((type) => {
-    const watchTimeouts = {};
-    fetchDatabase(category, type)
+  function fetchAndVerify() {
+    if (isFetching) {
+      console.log('Already fetching');
+      return Promise.resolve(false);
+    }
+
+    console.log('Fetch new data');
+    isFetching = true;
+    return fetchAllTypes(category)
       .then(() => {
-        fs.watch(getSourceDataLocation(category, type), () => {
-          clearTimeout(watchTimeouts[type]);
-          watchTimeouts[type] = setTimeout(function () {
-            fetchDatabase(category, type, {doForce: true});
-          }, 1000); // TODO fix this hacky way of waiting for the data write? Probably works pretty well since we're a streaming parser
-        });
+        isFetching = false;
+        verifyData(category)
+        return true;
       });
-  });
+  }
+
+  fetchAndVerify()
+    .then((isReady) => {
+      if (isReady) {
+        // When update.txt changes, we need to load new data
+        fs.watch(path.join(constants.DEFAULT_DATA_FOLDER, 'hive', 'update.txt'), fetchAndVerify);
+      }
+    });
+}
+
+// Polyfill
+if (!Object.values) {
+  const reduce = Function.bind.call(Function.call, Array.prototype.reduce);
+  const isEnumerable = Function.bind.call(Function.call, Object.prototype.propertyIsEnumerable);
+  const concat = Function.bind.call(Function.call, Array.prototype.concat);
+  const keys = Reflect.ownKeys;
+  Object.values = function values(O) {
+    return reduce(keys(O), (v, k) => concat(v, typeof k === 'string' && isEnumerable(O, k) ? [O[k]] : []), []);
+  };
 }
 
 module.exports = {
