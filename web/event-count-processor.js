@@ -84,10 +84,7 @@ function getDataSlice(db, key, forceStartIndex, forceEndIndex) {
 
 function getDateCountsArray(category, type, key, forceStartIndex, forceEndIndex) {
   return fetchDatabase(category, type)
-    .then((db) => getDataSlice(db, key, forceStartIndex, forceEndIndex))
-    .catch((val) => {
-      return val;
-    } );
+    .then((db) => getDataSlice(db, key, forceStartIndex, forceEndIndex));
 }
 
 function logHeap() {

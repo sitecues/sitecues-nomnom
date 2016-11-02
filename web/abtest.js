@@ -1,6 +1,7 @@
 'use strict';
 
 const
+  boom = require('boom'),
   CATEGORY = 'abtest',
   eventCountProcessor = require('./event-count-processor'),
   countsByLocAndUa = require('./location-and-ua');  // Get same event counts when there is no AB test running
@@ -61,6 +62,9 @@ function get(params) {
     .then((dateRange) => {
       // Get base data
       return getCountsForDateRange(params, dateRange);
+    })
+    .catch((err) => {
+      return boom.notFound('Valid data currently unavailable', err);
     });
 }
 
@@ -81,12 +85,18 @@ function listTestNamesAndDates() {
         testDateRangeInfo[testName] = getDateRange(testName);
       }
       return testDateRangeInfo;
+    })
+    .catch((err) => {
+      return boom.notFound('Valid data currently unavailable', err);
     });
 }
 
 function listTestValuesFor(testName) {
   return eventCountProcessor.fetchDatabase(CATEGORY)
-    .then(() => Array.from(testNameValueMap[testName]) || []);
+    .then(() => Array.from(testNameValueMap[testName]) || [])
+    .catch((err) => {
+      return boom.notFound('Valid data currently unavailable', err);
+    });
 }
 
 // Key format is: testName.testVal||eventName

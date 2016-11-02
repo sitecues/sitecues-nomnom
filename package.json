@@ -16,6 +16,7 @@
   "homepage": "https://bitbucket.org/aleventhal/sitecues-nomnom#readme",
   "dependencies": {
     "aws-sdk": "2.4.7",
+    "boom": "^4.2.0",
     "event-stream": "3.3.3",
     "glob-fs": "0.1.6",
     "hapi": "13.5.0",
