@@ -31,7 +31,10 @@ function registerKey(key) {
   });
 }
 
-eventCountProcessor.init(CATEGORY, { userCounts: registerKey });
+eventCountProcessor.init(CATEGORY, { userCounts: registerKey })
+  .catch((err) => {
+    console.log('\n\n', err);
+  });
 
 module.exports = {
   get,

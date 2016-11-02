@@ -37,7 +37,6 @@ function getCountsForDateRange(params, dateRange) {
     return Promise.all(dateCountPromises);
   })
   .then((results) => {
-    console.log('---');
     const
       finalResult = {},
       testValues = getTestValues(params.testName);
@@ -108,7 +107,7 @@ function registerPermutation(key, dateData) {
     testNameValueMap[testName] = new Set();
     testDates[testName] = new Set();
     console.log('AB Test name: ' +  testName);
-    console.log(key);
+    console.log('Key: ' + key);
   }
   // Add test name to set of all test names
   testNameValueMap[testName].add(testValue);
@@ -120,9 +119,10 @@ function registerPermutation(key, dateData) {
   newDates.forEach(origDates.add.bind(origDates));
 }
 
-eventCountProcessor.init(CATEGORY, {
-  userCounts: registerPermutation
-});
+eventCountProcessor.init(CATEGORY, { userCounts: registerPermutation })
+  .catch((err) => {
+    console.log('\n\n', err);
+  });
 
 module.exports = {
   get,

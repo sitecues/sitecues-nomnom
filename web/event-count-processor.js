@@ -15,8 +15,6 @@ const
   dbCache = {},
   CHECK_REPEATED_KEYS = true;
 
-let isFetching = false;
-
 function getDbLocation(category, type) {
   return path.join(constants.DEFAULT_DATA_FOLDER, 'cache', category, type);
 }
@@ -88,7 +86,6 @@ function getDateCountsArray(category, type, key, forceStartIndex, forceEndIndex)
   return fetchDatabase(category, type)
     .then((db) => getDataSlice(db, key, forceStartIndex, forceEndIndex))
     .catch((val) => {
-      console.log(val);
       return val;
     } );
 }
@@ -105,11 +102,11 @@ function closeDb(category, type) {
     return Promise.resolve();
   }
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     db.close((err) => {
       if (err) {
         console.log(err);
-        throw err;
+        return reject(err);
       }
       dbCache[category + ':' + type] = null; // Clear cache
       resolve();
@@ -117,24 +114,24 @@ function closeDb(category, type) {
   });
 }
 
-function destroyExistingDb(dbPath, category, type) {
-  return new Promise((resolve) => {
+function destroyExistingDb(dbPath) {
+  return new Promise((resolve, reject) => {
     levelDown.destroy(dbPath, (err) => {
       if (err) {
         console.log(err);
-        throw err;
+        return reject(err);
       }
       resolve();
     });
   });
 }
 
-function createNewDb(dbPath, category, type) {
-  return new Promise((resolve) => {
+function createNewDb(dbPath) {
+  return new Promise((resolve, reject) => {
     levelUp(dbPath, (err, db) => {
       if (err) {
-        throw err;
         console.log(err);
+        return reject(err);
       }
       resolve(db);
     });
@@ -163,8 +160,9 @@ function fetchData(db, category, type, sourceDataLocation) {
   const registerPermutationFn = permutationCallbackMap[category][type];
 
   // Stream in new data
-  return new Promise((resolve) => {
-    fs.createReadStream(sourceDataLocation)
+  return new Promise((resolve, reject) => {
+    const readStream = fs.createReadStream(sourceDataLocation);
+    readStream
       .pipe(es.split())
       .pipe(es.map((unparsedPermutation, callback) => {
         if (unparsedPermutation) {
@@ -179,8 +177,9 @@ function fetchData(db, category, type, sourceDataLocation) {
                 db.put(key, value, callback);
               }
               else {
-                //throw
-                console.log(new Error('Repeated key ' + key));
+                readStream.destroy();
+                const err = new Error('Repeated key ' + key);
+                return reject(err);
               }
             });
           }
@@ -215,15 +214,12 @@ function restartDb(category, type) {
   }
 
   return closeDb(category, type)
-    .then(() => destroyExistingDb(dbPath, category, type))
-    .then(() => createNewDb(dbPath, category, type))
+    .then(() => destroyExistingDb(dbPath))
+    .then(() => createNewDb(dbPath))
     .then((db) => {
       console.log('Fetching ' + category + ' ' + type);
-      return fetchData(db, category, type, getSourceDataLocation(category, type))
-    })
-    .then((db) => {
       dbCache[category + ':' + type] = db; // Cache
-      return db;
+      return fetchData(db, category, type, getSourceDataLocation(category, type))
     });
 }
 
@@ -274,8 +270,8 @@ function verifyData(category) {
     report = '\nKey counters: ' + JSON.stringify(allKeyCounters) +
       '\nKey hashes: ' + JSON.stringify(allKeyHashes);
   if (allKeyHashes.eventCounts !== allKeyHashes.sessionCounts || allKeyHashes.eventCounts !== allKeyHashes.userCounts) {
-    //throw
-    console.log(new Error(category + ' discrepancy in event/user/session keys: ' + report));
+    var err = new Error(category + ' discrepancy in event/user/session keys: ' + report);
+    throw err;
   }
   console.log(category + ' passes all checks for: ' + report);
 }
@@ -291,30 +287,31 @@ function init(category, permutationCallback) {
   mkdir(path.join(constants.DEFAULT_DATA_FOLDER, 'cache', category));
 
   permutationCallbackMap[category] = permutationCallback;
+  let isFetching = false;
 
   function fetchAndVerify() {
     if (isFetching) {
       console.log('Already fetching');
-      return Promise.resolve(false);
+      return;
     }
 
-    console.log('Fetch new data');
+    console.log('Fetch new data for ' + category);
     isFetching = true;
     return fetchAllTypes(category)
       .then(() => {
         isFetching = false;
-        verifyData(category)
-        return true;
+        verifyData(category);
+      })
+      .catch((err) => {
+        isFetching = false;
+        throw err;
       });
   }
 
-  fetchAndVerify()
-    .then((isReady) => {
-      if (isReady) {
-        // When update.txt changes, we need to load new data
-        fs.watch(path.join(constants.DEFAULT_DATA_FOLDER, 'hive', 'update.txt'), fetchAndVerify);
-      }
-    });
+  // When update.txt changes, we need to load new data
+  fs.watch(path.join(constants.DEFAULT_DATA_FOLDER, 'hive', 'update.txt'), fetchAndVerify);
+
+  return fetchAndVerify();
 }
 
 // Polyfill
