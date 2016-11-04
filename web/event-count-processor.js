@@ -13,7 +13,8 @@ const
   keyCounterMap = {},
   keyHashMap = {},
   dbCache = {},
-  CHECK_REPEATED_KEYS = true;
+  CHECK_REPEATED_KEYS = true,
+  SHOW_ALL_REPEATED_KEYS = true;
 
 function getDbLocation(category, type) {
   return path.join(constants.DEFAULT_DATA_FOLDER, 'cache', category, type);
@@ -95,8 +96,9 @@ function closeDb(category, type) {
   const db = dbCache[category + ':' + type];
   if (!db) {
     // No old db to destroy
-    console.log('No existing db for ' + category + ':' + type);
-    return Promise.resolve();
+    const err = 'No existing db for ' + category + ':' + type;
+    console.log(err);
+    return Promise.reject(err);
   }
 
   return new Promise((resolve, reject) => {
@@ -171,12 +173,17 @@ function fetchData(db, category, type, sourceDataLocation) {
             db.get(key, (err) => {
               if (err && err.notFound) {
                 // This is a good thing, as we don't want the same key in the database twice
+                if (key.includes('bestfriends.org/donate')) {
+                  console.log(key);
+                }
                 db.put(key, value, callback);
               }
               else {
-                readStream.destroy();
-                const err = new Error('Repeated key ' + key);
-                return reject(err);
+                const err = 'Repeated key for ' + category + ' / ' + type + ' / ' + key;
+                if (SHOW_ALL_REPEATED_KEYS) {
+                  console.log(err);
+                }
+                return reject(new Error(err));
               }
             });
           }
